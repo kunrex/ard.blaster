@@ -133,7 +133,7 @@ void loop() {
   manageFireState();
 
   unsigned long currentTime = millis();
-  if(*flywheelIn == HIGH && previousState == 0 && (previousState != *triggerIn))
+  if(*flywheelIn == HIGH && previousState == 0 && *triggerIn == 1)
   {
     isShooting = true;
     *previousTime = currentTime;
