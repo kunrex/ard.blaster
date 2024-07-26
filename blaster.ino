@@ -13,94 +13,59 @@ enum FireState
   Single = 2
 };
 
-class MotorDriver
+struct Motor
 {
-  private:
-    //stby connected to 5V supply
+  public:
     unsigned int in1;
     unsigned int in2;
     unsigned int pwm;
     unsigned int stby;
-
-  public:
-    MotorDriver() { }
-
-    MotorDriver(unsigned int _in1, unsigned int _in2, unsigned int _pwm, unsigned int _stby)
-    {
-      in1 = _in1;
-      in2 = _in2;
-      pwm = _pwm;
-      stby = _stby;
-
-      pinMode(in1, OUTPUT);
-      pinMode(in2, OUTPUT);
-      pinMode(pwm, OUTPUT);
-      pinMode(stby, OUTPUT);
-    }
-
-    void motorDrive(bool motorDirection, int motorSpeed = 255)//motorDirection true = clockwise
-    {
-      bool pinIn1;  
-      
-      //Clockwise: In1 = HIGH and In2 = LOW
-      //Counter-Clockwise: In1 = LOW and In2 = HIGH
-      if (motorDirection)
-        pinIn1 = HIGH;
-      else
-        pinIn1 = LOW;
-
-      digitalWrite(in1, pinIn1);//drive motors
-      digitalWrite(in2, !pinIn1);  
-      analogWrite(pwm, motorSpeed);//speed
-
-      digitalWrite(stby, HIGH);//disable stby
-    }
-
-    void motorStop()
-    {
-      digitalWrite(in1, LOW);
-      digitalWrite(in2, LOW);  
-    }
-
-    void motorBrake()
-    {
-      analogWrite(pwm, 0); 
-
-      digitalWrite(stby, LOW);//disable stby
-    }
 };
 
-int* triggerIn;
-int* flywheelIn;
+int triggerIn;
+int flywheelIn;
 
 bool isShooting;
 
-MotorDriver triggerMotor;
-MotorDriver flywheelMotor;
+Motor triggerMotor;
+Motor flywheelMotor;
 
 FireState fireState;
-unsigned int* timeModifier;
-unsigned long* previousTime;
+unsigned int timeModifier;
+unsigned long previousTime;
+
+void initMotor(Motor* motor, unsigned int in1, unsigned int in2, unsigned int pwm, unsigned int stby)
+{
+  motor->in1 = in1;
+  motor->in2 = in2;
+  motor->pwm = pwm;
+  motor->stby = stby;
+
+  pinMode(motor->in1, INPUT);
+  pinMode(motor->in2, INPUT);
+  pinMode(motor->pwm, INPUT);
+  pinMode(motor->stby, INPUT);
+}
 
 void setup() {
   pinMode(firePin, INPUT);
   pinMode(triggerPin, INPUT);
   pinMode(flywheelPin, INPUT);
   
-  triggerIn = new int(0);
-  flywheelIn = new int(0);
+  triggerIn = 0;
+  flywheelIn = 0;
 
   isShooting = false;
 
-  triggerMotor =  MotorDriver(11, 10, 9, 8); 
-  flywheelMotor = MotorDriver(4, 5, 6, 7);
+  initMotor(&triggerMotor, 11, 10, 9, 8); 
+  initMotor(&flywheelMotor, 4, 5, 6, 7);
 
   fireState = Single;
 
-  timeModifier = new int(1);
-  previousTime = new long(0);
+  timeModifier = 1;
+  previousTime = 0;
 
-  Serial.begin(9600);
+  //Serial.begin(9600);
 }
 
 void manageFireState()
@@ -110,55 +75,85 @@ void manageFireState()
   if(state == 0)
   {
     fireState = Single;
-    *timeModifier = 1;
+    timeModifier = 1;
   }
   else if(state == 1)
   {
     fireState = Burst;
-    *timeModifier = 3;
+    timeModifier = 3;
   }
   else if(state == 2)
   {
     fireState = Full;
-    *timeModifier = 1;
+    timeModifier = 1;
   }
 }
 
-void loop() {
-  int previousState = *triggerIn;
-  *triggerIn = digitalRead(triggerPin);
+void motorDrive(Motor* motor, bool motorDirection, int motorSpeed = 255)
+{
+  bool pinIn1;  
+      
+  //Clockwise: In1 = HIGH and In2 = LOW
+  //Counter-Clockwise: In1 = LOW and In2 = HIGH
+  if (motorDirection)
+    pinIn1 = HIGH;
+  else
+    pinIn1 = LOW;
 
-  *flywheelIn = digitalRead(flywheelPin);
+  digitalWrite(motor->in1, pinIn1);//drive motors
+  digitalWrite(motor->in2, !pinIn1);  
+  analogWrite(motor->pwm, motorSpeed);//speed
+
+  digitalWrite(motor->stby, HIGH);
+}
+
+void motorStop(Motor* motor)
+{
+  digitalWrite(motor->in1, LOW);
+  digitalWrite(motor->in2, LOW);  
+}
+
+void motorBrake(Motor* motor)
+{
+  analogWrite(motor->pwm, 0); 
+  digitalWrite(motor->stby, LOW);
+}
+
+void loop() {
+  int previousState = triggerIn;
+  triggerIn = digitalRead(triggerPin);
+
+  flywheelIn = digitalRead(flywheelPin);
 
   manageFireState();
 
   unsigned long currentTime = millis();
-  if(*flywheelIn == HIGH && previousState == 0 && *triggerIn == 1)
+  if(flywheelIn == HIGH && previousState == LOW && triggerIn == HIGH)
   {
     isShooting = true;
-    *previousTime = currentTime;
+    previousTime = currentTime;
   }
 
-  if(isShooting && (currentTime - *previousTime >= fireRate * (*timeModifier)))
+  if(isShooting && (currentTime - previousTime) >= fireRate * timeModifier)
   {
     if(fireState == Full)
     {
-      if(*triggerIn == LOW)
+      if(triggerIn == LOW)
         isShooting = false;
       else
-        *previousTime = currentTime;
+        previousTime = currentTime;
     }
     else
       isShooting = false;
   }
 
-  if(*flywheelIn == HIGH)
-    flywheelMotor.motorDrive(true);
+  if(flywheelIn == HIGH)
+    motorDrive(&flywheelMotor, true);
   else
-    flywheelMotor.motorStop();
+    motorBrake(&flywheelMotor);
   
   if(isShooting)
-    triggerMotor.motorDrive(true);
+    motorDrive(&triggerMotor, true);
   else
-    triggerMotor.motorStop();
+    motorStop(&triggerMotor);
 }
